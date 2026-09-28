@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grume"
+version = "0.1.0"
+description = "Gmail to AI research to Canva automation for gourmet social posts"
+requires-python = ">=3.11"
+dependencies = [
+  "openai>=1.99.0",
+  "pydantic>=2.8.0",
+  "pydantic-settings>=2.4.0",
+  "google-api-python-client>=2.144.0",
+  "google-auth>=2.34.0",
+  "google-auth-oauthlib>=1.2.1",
+  "requests>=2.32.3",
+  "PyYAML>=6.0.2",
+  "python-slugify>=8.0.4",
+  "Pillow>=10.4.0",
+  "pillow-heif>=0.18.0",
+  "python-dotenv>=1.0.1"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
