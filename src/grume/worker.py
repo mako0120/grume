@@ -11,6 +11,7 @@ from pathlib import Path
 from slugify import slugify
 
 from .canva_client import CanvaClient
+from .canva_mcp_client import CanvaMcpEditor, CanvaMcpTokenStore
 from .gmail_client import GmailClient
 from .image_utils import normalize_image
 from .intake import parse_email_job
@@ -38,13 +39,16 @@ class Worker:
         self.done_label = self.gmail.ensure_label(settings.gmail_done_label)
         self.error_label = self.gmail.ensure_label(settings.gmail_error_label)
 
-        self.canva = None
+        self.canva_rest: CanvaClient | None = None
+        self.canva_mcp: CanvaMcpEditor | None = None
+
         if (
-            settings.canva_client_id
+            settings.canva_mode != "off"
+            and settings.canva_client_id
             and settings.canva_client_secret
             and settings.canva_source_id
         ):
-            self.canva = CanvaClient(
+            self.canva_rest = CanvaClient(
                 api_base=settings.canva_api_base,
                 client_id=settings.canva_client_id,
                 client_secret=settings.canva_client_secret,
@@ -52,6 +56,66 @@ class Worker:
                 source_type=settings.canva_source_type,
                 source_id=settings.canva_source_id,
             )
+
+        if (
+            settings.canva_mode == "mcp"
+            and self.canva_rest
+            and (settings.canva_mcp_client_id or settings.canva_client_id)
+            and (settings.canva_mcp_client_secret or settings.canva_client_secret)
+            and settings.canva_source_id
+        ):
+            token_store = CanvaMcpTokenStore(
+                client_id=settings.canva_mcp_client_id or settings.canva_client_id or "",
+                client_secret=(
+                    settings.canva_mcp_client_secret
+                    or settings.canva_client_secret
+                    or ""
+                ),
+                token_file=settings.canva_mcp_token_file,
+            )
+            self.canva_mcp = CanvaMcpEditor(
+                server_url=settings.canva_mcp_server_url,
+                token_store=token_store,
+                rest_client=self.canva_rest,
+                source_design_id=settings.canva_source_id,
+                template_profile_path=settings.canva_template_profile,
+            )
+
+    def _render_canva(
+        self,
+        post,
+        normalized: list[str],
+    ) -> tuple[dict | None, str | None]:
+        image_paths_by_name = {Path(p).name: p for p in normalized}
+
+        if self.settings.canva_mode == "off":
+            return None, "Canva mode is off"
+
+        if self.settings.canva_mode == "mcp":
+            if not self.canva_mcp:
+                return None, (
+                    "Canva MCP is not configured. REST OAuth + MCP OAuth + "
+                    "CANVA_SOURCE_ID are required."
+                )
+            return self.canva_mcp.render(post, image_paths_by_name), None
+
+        if self.settings.canva_mode == "autofill":
+            if not self.canva_rest:
+                return None, "Canva REST Autofill is not configured."
+            result = self.canva_rest.create_autofilled_design(
+                title=post.design_title,
+                store_name=post.store_name,
+                area=post.area,
+                station=post.nearest_station,
+                cover_subcopy=post.cover_subcopy,
+                cover_hook=post.cover_hook,
+                pages=[p.model_dump() for p in post.pages],
+                image_paths_by_name=image_paths_by_name,
+            )
+            result["_mode"] = "rest_autofill"
+            return result, None
+
+        return None, f"Unknown Canva mode: {self.settings.canva_mode}"
 
     def process_message(self, message_id: str) -> Path:
         message = self.gmail.get_message(message_id)
@@ -124,19 +188,8 @@ class Worker:
                 encoding="utf-8",
             )
 
-            canva_result = None
-            if self.canva:
-                image_paths_by_name = {Path(p).name: p for p in normalized}
-                canva_result = self.canva.create_autofilled_design(
-                    title=post.design_title,
-                    store_name=post.store_name,
-                    area=post.area,
-                    station=post.nearest_station,
-                    cover_subcopy=post.cover_subcopy,
-                    cover_hook=post.cover_hook,
-                    pages=[p.model_dump() for p in post.pages],
-                    image_paths_by_name=image_paths_by_name,
-                )
+            canva_result, canva_note = self._render_canva(post, normalized)
+            if canva_result:
                 write_json(job_dir / "canva_result.json", canva_result)
 
             reply_lines = [
@@ -146,14 +199,18 @@ class Worker:
                 f"要確認: {'あり' if post.needs_review else 'なし'}",
             ]
             if canva_result:
-                edit_url = canva_result.get("urls", {}).get("edit_url") or canva_result.get("url")
-                view_url = canva_result.get("urls", {}).get("view_url")
+                urls = canva_result.get("urls", {})
+                edit_url = urls.get("edit_url") or canva_result.get("edit_url") or canva_result.get("url")
+                view_url = urls.get("view_url") or canva_result.get("view_url")
                 if edit_url:
                     reply_lines.append(f"Canva編集: {edit_url}")
                 if view_url:
                     reply_lines.append(f"Canva表示: {view_url}")
+                reply_lines.append(
+                    f"Canva方式: {canva_result.get('_mode', self.settings.canva_mode)}"
+                )
             else:
-                reply_lines.append("Canva: 未設定のためMD生成まで完了")
+                reply_lines.append(f"Canva: 未生成 ({canva_note or 'not configured'})")
 
             if post.review_reasons:
                 reply_lines.extend(["", "要確認理由:"])

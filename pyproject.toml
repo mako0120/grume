@@ -4,11 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "grume"
-version = "0.1.0"
+version = "0.2.0"
 description = "Gmail to AI research to Canva automation for gourmet social posts"
 requires-python = ">=3.11"
 dependencies = [
   "openai>=1.99.0",
+  "openai-agents>=0.4.0",
+  "mcp>=1.19.0,<2",
+  "httpx>=0.28.0",
   "pydantic>=2.8.0",
   "pydantic-settings>=2.4.0",
   "google-api-python-client>=2.144.0",

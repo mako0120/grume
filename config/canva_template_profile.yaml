@@ -1,0 +1,16 @@
+name: 蟹かに城ベース 20P
+source_design_id: DAHQmZ-GP3I
+page_count: 20
+
+# Page 1 is structurally different from the other pages.
+# These values identify the original text elements after copy-design.
+page1:
+  store_prefix: "📍"
+  hook_contains: "\\"
+  station_source_text: "日本橋"
+  area_source_text: "大阪"
+
+# Pages 2-20 each contain one non-empty caption text element.
+caption_pages:
+  start: 2
+  end: 20
