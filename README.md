@@ -1,30 +1,66 @@
 # grume — Gmail → AI → Canva 自動化
 
-写真付きメールを送るだけで、**店舗調査 → Markdown生成 → Canva生成 → 保存 → 完了メール返信**まで自動化するMVPです。
+Gmailに写真と店舗情報を送るだけで、**画像整理 → Web調査 → Markdown生成 → Canva作成・保存 → 完了メール返信**までを自動化するプロジェクトです。
 
-## 完成フロー
+## 自動フロー
 
 ```text
 Gmail
   ↓
-添付写真・店舗名・コース情報を取得
+添付写真 / 店舗名 / コース名 / 料理順を取得
   ↓
-OpenAI Visionで写真を分類・コース順に整理
+OpenAI Vision
+  ├─ 外観 / 店内 / 乾杯 / 料理 / 焼き工程 / アップを分類
+  └─ 指定されたコース順に並び替え
   ↓
-OpenAI Web Searchで店舗を調査
+OpenAI Web Search
+  └─ 公式情報を優先して店舗を調査
   ↓
-グルメ日誌ルールで post.md / post.json を生成
+post.md + post.json
+  ├─ 表紙コピー
+  ├─ 各ページ文章
+  └─ 強い表現の重複チェック
   ↓
-Canvaへ画像アップロード
+Canva MCP exact edit
+  ├─ MASTERテンプレートをコピー
+  ├─ Gmail写真をCanvaへアップロード
+  ├─ 既存の背景写真を update_fill で置換
+  ├─ 既存テキストを replace_text で置換
+  └─ commit-editing-transaction で自動保存
   ↓
-Autofill対応 MASTER TEMPLATE に流し込み
-  ↓
-新しいCanvaデザインを保存
-  ↓
-完成URLをGmailで返信
+Gmailへ完成Canva URLを返信
 ```
 
-## メールの送り方
+## なぜ Canva MCP を優先するのか
+
+既存の「蟹かに城」型テンプレートでは、料理写真が通常の画像要素ではなく**ページ背景**として入っています。
+
+Canva Autofillは背景そのものを画像フィールドとして扱えないため、このプロジェクトではデフォルトを:
+
+```env
+CANVA_MODE=mcp
+```
+
+にしています。
+
+Canva MCP の編集トランザクションを使うと、既存レイアウトを崩さず、背景画像そのものを差し替えられます。
+
+```text
+copy-design
+→ start-editing-transaction
+→ update_fill / replace_text
+→ commit-editing-transaction
+```
+
+Autofill用に作り直したテンプレートを使う場合のみ:
+
+```env
+CANVA_MODE=autofill
+```
+
+も利用できます。
+
+## メール形式
 
 件名:
 
@@ -32,7 +68,7 @@ Autofill対応 MASTER TEMPLATE に流し込み
 [グルメCanva] 焼肉しょうちゃん天満
 ```
 
-本文:
+本文例:
 
 ```text
 店舗名：焼肉しょうちゃん天満
@@ -55,17 +91,21 @@ Autofill対応 MASTER TEMPLATE に流し込み
 ・強い表現は被らせない
 ```
 
-写真を添付してください。本文が簡単でも、件名から店舗名を補完します。
+写真を1〜20枚添付します。iPhoneのHEIC/HEIFもJPEGへ自動変換します。
 
-## グルメ日誌ルール
+## 投稿ルール
+
+`config/gourmet_rules.yaml` に固定しています。
 
 - 写真主役
-- 短文・話し言葉・絵文字あり
+- 短文
+- 話し言葉
+- 絵文字あり
 - 未確認情報を捏造しない
-- 強い表現を同一投稿内で重複させない
-- コース順が本文にある場合は最優先
-- 料理名の確信度が低い場合は `needs_review`
-- 既存Canvaテンプレのレイアウトを維持し、中身だけ差し替える
+- コース順を最優先
+- 「優勝すぎる」「ビジュやばすぎる」「反則級」などの強い表現を重複させない
+- 自動検証に失敗したら1回コピーを再生成
+- 料理名に確信がない場合は要確認扱い
 
 ## セットアップ
 
@@ -78,21 +118,27 @@ pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-### Gmail OAuth
+## 1. Gmail OAuth
 
-Google CloudでGmail APIを有効化し、OAuth Desktop Client JSONを `secrets/google_client_secret.json` に保存します。
+Google CloudでGmail APIを有効化し、OAuth Desktop Client JSONを:
 
-初回だけ:
+```text
+secrets/google_client_secret.json
+```
+
+へ保存します。
+
+初回のみ:
 
 ```bash
 python scripts/gmail_oauth_bootstrap.py
 ```
 
-生成される `secrets/google_token.json` はGitに入りません。
+## 2. Canva REST OAuth
 
-### Canva OAuth
+REST APIは、Gmailから取得したローカル写真をCanvaのAssetとしてアップロードするために使います。
 
-Canva Developer PortalでOutside CanvaのOAuth設定を作成し、**このMVPでは以下のスコープが必要**です。
+必要スコープ:
 
 ```text
 asset:read
@@ -102,53 +148,71 @@ design:content:write
 design:meta:read
 ```
 
-Brand Templateを元にする場合は追加:
-
-```text
-brandtemplate:content:read
-```
-
-初回だけ:
+初回のみ:
 
 ```bash
 python scripts/canva_oauth_bootstrap.py
 ```
 
-Canvaのaccess tokenは短命で、refresh tokenは更新時にローテーションされます。本アプリは `CANVA_TOKEN_FILE` を自動更新するため、Docker/VPSでは **secretsディレクトリを永続化**してください。
+## 3. Canva MCP OAuth
 
-## Canva MASTER TEMPLATE
+正確なテンプレート編集には Canva MCP を使います。
 
-CanvaのData autofillで、MASTER TEMPLATEの要素に以下のフィールド名を設定します。
+```env
+CANVA_MCP_SERVER_URL=https://mcp.canva.com/mcp
+CANVA_MCP_CLIENT_ID=...
+CANVA_MCP_CLIENT_SECRET=...
+CANVA_MCP_REDIRECT_URI=http://127.0.0.1:8766/callback
+```
+
+初回のみ:
+
+```bash
+python scripts/canva_mcp_oauth_bootstrap.py
+```
+
+MCPのOAuthトークンは:
 
 ```text
-STORE_NAME
-AREA
-STATION
-COVER_SUBCOPY
-COVER_HOOK
-
-PAGE_01_IMAGE
-PAGE_01_TEXT
-PAGE_02_IMAGE
-PAGE_02_TEXT
-...
-PAGE_20_IMAGE
-PAGE_20_TEXT
+secrets/canva_mcp_token.json
 ```
 
-既存デザインを元にする場合:
+へ保存され、その後はrefresh tokenで自動更新します。
+
+> Canva MCPを自作の外部AIアプリから利用するには、Canva側でそのOAuthクライアントのMCP利用が有効になっている必要があります。
+
+## MASTER TEMPLATE
+
+現在の既定値:
 
 ```env
-CANVA_SOURCE_TYPE=design
-CANVA_SOURCE_ID=DAxxxxxxxxx
+CANVA_SOURCE_ID=DAHQmZ-GP3I
 ```
 
-Brand Templateの場合:
+これは「蟹かに城」ベースの20ページテンプレートです。
 
-```env
-CANVA_SOURCE_TYPE=brand_template
-CANVA_SOURCE_ID=DAxxxxxxxxx
+テンプレート構造の識別ルールは:
+
+```text
+config/canva_template_profile.yaml
 ```
+
+に保存しています。
+
+ページ1:
+- 📍 から始まるテキスト → 店名
+- \ を含むテキスト → フック
+- 日本橋 → 最寄駅
+- 大阪 → エリア
+- 残りの大きいテキスト → 表紙サブコピー
+
+ページ2〜20:
+- 各ページの唯一の非空キャプション → 本文
+
+画像:
+- 各ページのroot background fill → 投稿写真
+
+このため、テンプレートの見た目を崩さず差し替えます。
 
 ## 実行
 
@@ -158,7 +222,7 @@ CANVA_SOURCE_ID=DAxxxxxxxxx
 python -m grume.worker once
 ```
 
-常時監視:
+60秒ごとにGmail監視:
 
 ```bash
 python -m grume.worker loop --interval 60
@@ -172,13 +236,13 @@ docker compose up -d --build
 
 ## Gmailラベル
 
-自動作成・管理:
+自動作成:
 
 - `grume/processing`
 - `grume/done`
 - `grume/error`
 
-デフォルト対象:
+デフォルト検索:
 
 ```text
 is:unread has:attachment subject:"[グルメCanva]"
@@ -198,27 +262,66 @@ output/
     canva_result.json
 ```
 
-画像は実行時に使用しますがGitには含めません。
+## Canvaモード
+
+### exact edit — 推奨
+
+```env
+CANVA_MODE=mcp
+```
+
+既存テンプレートをそのままコピーし、背景画像とテキストを直接差し替えます。
+
+### Autofill — 代替
+
+```env
+CANVA_MODE=autofill
+```
+
+Canva側で画像・テキストをData autofillフィールドとして作り直したテンプレート用です。
+
+### Canvaなし
+
+```env
+CANVA_MODE=off
+```
+
+調査・MD生成まで行います。
 
 ## 実装済み
 
-- Gmail添付写真取得
-- HEIC/HEIF → JPEG変換
-- AIによる写真分類/並べ替え
-- Web検索付き店舗リサーチ
-- 構造化コピー生成
-- 強表現重複チェック + 1回自動修正
-- MD/JSON保存
-- Canva Asset Upload + upload job polling
-- Canva Dataset検証
-- Canva Autofill
-- Canva OAuth refresh tokenローテーション保存
+- Gmail監視
+- Gmail画像添付取得
+- HEIC / HEIF対応
+- AI画像分類
+- コース順整理
+- Web検索店舗調査
+- 構造化コピー
+- 強表現重複検査
+- 自動再生成
+- Markdown / JSON保存
+- Canva REST asset upload
+- Canva REST Autofill fallback
+- Canva remote MCP接続
+- MASTERコピー
+- 背景画像直接置換
+- テキスト直接置換
+- Canva自動commit
+- Canva完成URL取得
 - Gmail完成通知
-- 失敗ラベル付与
+- Docker常駐運用
 - pytest CI
 
-## 重要
+## セキュリティ
 
-このMVPは **常駐サーバー/VPS/Docker** で動かす前提です。GitHub Actionsの定期実行だけでCanvaのrefresh tokenを安全に永続更新する設計にはしていません。
+以下はGitへコミットしないでください。
 
-また、コードだけではCanvaの既存デザインにData autofillフィールドは自動付与されません。最初に1回だけMASTER TEMPLATEのフィールド設定が必要です。
+```text
+.env
+secrets/google_client_secret.json
+secrets/google_token.json
+secrets/canva_token.json
+secrets/canva_mcp_token.json
+```
+
+本番では `secrets/` と `output/` を永続ボリュームにしてください。

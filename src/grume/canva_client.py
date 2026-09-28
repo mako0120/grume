@@ -13,6 +13,11 @@ class CanvaError(RuntimeError):
 
 
 class CanvaClient:
+    """Canva REST client.
+
+    Used for local image uploads in both modes, and for Autofill as a fallback.
+    """
+
     def __init__(
         self,
         api_base: str,
@@ -32,7 +37,7 @@ class CanvaClient:
     def _load_token(self) -> dict:
         if not self.token_file.exists():
             raise CanvaError(
-                f"Canva token file not found: {self.token_file}. "
+                f"Canva REST token file not found: {self.token_file}. "
                 "Run scripts/canva_oauth_bootstrap.py first."
             )
         return json.loads(self.token_file.read_text(encoding="utf-8"))
@@ -50,7 +55,7 @@ class CanvaClient:
             timeout=30,
         )
         if response.status_code >= 400:
-            raise CanvaError(f"Canva token refresh failed: {response.status_code} {response.text}")
+            raise CanvaError(f"Canva REST token refresh failed: {response.status_code} {response.text}")
         token = response.json()
         token["obtained_at"] = int(time.time())
         self._save_token(token)
@@ -67,23 +72,11 @@ class CanvaClient:
         if not refresh:
             if access:
                 return access
-            raise CanvaError("Canva access_token / refresh_token がありません")
+            raise CanvaError("Canva REST access_token / refresh_token がありません")
         return self._refresh(refresh)["access_token"]
 
     def _auth_headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.access_token()}"}
-
-    def get_dataset(self) -> dict:
-        if self.source_type == "design":
-            url = f"{self.api_base}/designs/{self.source_id}/dataset"
-        elif self.source_type == "brand_template":
-            url = f"{self.api_base}/brand-templates/{self.source_id}/dataset"
-        else:
-            raise CanvaError(f"Unsupported CANVA_SOURCE_TYPE: {self.source_type}")
-        response = requests.get(url, headers=self._auth_headers(), timeout=30)
-        if response.status_code >= 400:
-            raise CanvaError(f"Canva dataset failed: {response.status_code} {response.text}")
-        return response.json().get("dataset", {})
 
     def upload_asset(self, image_path: str) -> str:
         path = Path(image_path)
@@ -123,6 +116,18 @@ class CanvaClient:
             time.sleep(1.5)
         raise CanvaError(f"Canva asset upload timed out: {job_id}")
 
+    def get_dataset(self) -> dict:
+        if self.source_type == "design":
+            url = f"{self.api_base}/designs/{self.source_id}/dataset"
+        elif self.source_type == "brand_template":
+            url = f"{self.api_base}/brand-templates/{self.source_id}/dataset"
+        else:
+            raise CanvaError(f"Unsupported CANVA_SOURCE_TYPE: {self.source_type}")
+        response = requests.get(url, headers=self._auth_headers(), timeout=30)
+        if response.status_code >= 400:
+            raise CanvaError(f"Canva dataset failed: {response.status_code} {response.text}")
+        return response.json().get("dataset", {})
+
     def create_autofilled_design(
         self,
         title: str,
@@ -138,7 +143,7 @@ class CanvaClient:
         if not dataset:
             raise CanvaError(
                 "Canva source has no autofill dataset. "
-                "MASTER TEMPLATE に Data autofill フィールドを設定してください。"
+                "Autofill mode requires explicit image/text data fields."
             )
 
         data: dict = {}
@@ -159,7 +164,6 @@ class CanvaClient:
             filename = page["filename"]
             image_field = f"PAGE_{index:02d}_IMAGE"
             text_field = f"PAGE_{index:02d}_TEXT"
-
             add_text(text_field, page["text"])
 
             if image_field in dataset and filename in image_paths_by_name:

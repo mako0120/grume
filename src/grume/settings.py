@@ -25,7 +25,15 @@ class Settings(BaseSettings):
     canva_redirect_uri: str = "http://127.0.0.1:8765/callback"
     canva_token_file: str = "secrets/canva_token.json"
     canva_source_type: Literal["design", "brand_template"] = "design"
-    canva_source_id: str | None = None
+    canva_source_id: str | None = "DAHQmZ-GP3I"
+    canva_mode: Literal["off", "autofill", "mcp"] = "mcp"
+
+    canva_mcp_server_url: str = "https://mcp.canva.com/mcp"
+    canva_mcp_client_id: str | None = None
+    canva_mcp_client_secret: str | None = None
+    canva_mcp_redirect_uri: str = "http://127.0.0.1:8766/callback"
+    canva_mcp_token_file: str = "secrets/canva_mcp_token.json"
+    canva_template_profile: str = "config/canva_template_profile.yaml"
 
     output_dir: str = "output"
     default_area: str = "大阪"
@@ -37,7 +45,3 @@ class Settings(BaseSettings):
     @property
     def output_path(self) -> Path:
         return Path(self.output_dir)
-
-    @property
-    def canva_token_path(self) -> Path:
-        return Path(self.canva_token_file)

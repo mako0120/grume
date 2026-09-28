@@ -126,6 +126,8 @@ Instagram/Canva投稿に使える正確な店舗情報を得ること。
 - 未確認の味や料理名を捏造しない
 - ユーザーが料理順を指定した場合はその順番を守る
 - ファイル名はImagePlanに存在する名前をそのまま使用
+- pagesには使用する全写真を1回ずつ含める
+- page_index=1は表紙画像。page_indexは1から連番にする
 - ページ数は写真数を超えない
 - 表紙は店舗名とは別に、短いサブコピーと短いフックを作る
 - areaは {job.area or research.area or default_area}
