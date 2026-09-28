@@ -1,8 +1,0 @@
-services:
-  grume:
-    build: .
-    restart: unless-stopped
-    env_file: .env
-    volumes:
-      - ./secrets:/app/secrets
-      - ./output:/app/output

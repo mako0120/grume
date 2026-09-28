@@ -1,71 +1,86 @@
-# grume — Gmail → AI → Canva 自動化
+# grume — ChatGPT グルメ自動制作ルール / MD保管庫
 
-Gmailに写真と店舗情報を送るだけで、**画像整理 → Web調査 → Markdown生成 → Canva作成・保存 → 完了メール返信**までを自動化するプロジェクトです。
+このリポジトリは **実行プログラムではありません**。
 
-## 自動フロー
+Gmailで受け取ったグルメ素材を、ChatGPTの自動化が処理するときに参照するルールと、完成した投稿Markdownを保存するための保管庫です。
+
+## 実行主体
 
 ```text
 Gmail
   ↓
-添付写真 / 店舗名 / コース名 / 料理順を取得
+ChatGPT Automation
+  ├─ 対象メールを検知
+  ├─ 添付写真を確認
+  ├─ Webで店舗を調査
+  ├─ 投稿MDを作成
+  ├─ Canvaテンプレートをコピー
+  ├─ 写真・文章を差し替え
+  └─ Canvaを保存
   ↓
-OpenAI Vision
-  ├─ 外観 / 店内 / 乾杯 / 料理 / 焼き工程 / アップを分類
-  └─ 指定されたコース順に並び替え
-  ↓
-OpenAI Web Search
-  └─ 公式情報を優先して店舗を調査
-  ↓
-post.md + post.json
-  ├─ 表紙コピー
-  ├─ 各ページ文章
-  └─ 強い表現の重複チェック
-  ↓
-Canva MCP exact edit
-  ├─ MASTERテンプレートをコピー
-  ├─ Gmail写真をCanvaへアップロード
-  ├─ 既存の背景写真を update_fill で置換
-  ├─ 既存テキストを replace_text で置換
-  └─ commit-editing-transaction で自動保存
-  ↓
-Gmailへ完成Canva URLを返信
+GitHub
+  └─ 完成MD / 制作記録を保存
 ```
 
-## なぜ Canva MCP を優先するのか
+**GitHub Actions / OpenAI API / Gmail API / Canva API を動かすためのリポジトリではありません。**
 
-既存の「蟹かに城」型テンプレートでは、料理写真が通常の画像要素ではなく**ページ背景**として入っています。
+以前作ったAPI実行コードはGit履歴には残っていますが、現在の運用では使用しません。
 
-Canva Autofillは背景そのものを画像フィールドとして扱えないため、このプロジェクトではデフォルトを:
-
-```env
-CANVA_MODE=mcp
-```
-
-にしています。
-
-Canva MCP の編集トランザクションを使うと、既存レイアウトを崩さず、背景画像そのものを差し替えられます。
+## ディレクトリ
 
 ```text
-copy-design
-→ start-editing-transaction
-→ update_fill / replace_text
-→ commit-editing-transaction
+automation/
+  chatgpt-task.md
+  workflow.md
+
+rules/
+  gourmet-canva.md
+  gmail-intake.md
+  research.md
+  md-storage.md
+
+canva/
+  templates.md
+
+templates/
+  post-template.md
+  processing-record-template.md
+
+posts/
+  README.md
+  INDEX.md
+  YYYY/
+    MM/
+      YYYY-MM-DD_店舗名/
+        post.md
+        record.md
 ```
 
-Autofill用に作り直したテンプレートを使う場合のみ:
+## 投稿制作の基準
 
-```env
-CANVA_MODE=autofill
-```
+基準Canva:
 
-も利用できます。
+- 焼肉 城と七宝 — `DAHRTs0jdPw`
+- 蟹かに城 — `DAHQmZ-GP3I`
+- サイズ: **1080 × 1350 px / 4:5**
 
-## メール形式
+原則:
 
-件名:
+- フォント・レイアウト・ページ構成を維持
+- 写真を主役にする
+- 店名 / 写真 / 文章のみ差し替える
+- コース順が分かる場合は最優先
+- 未確認情報を捏造しない
+- 強い表現を投稿内で重複させない
+
+詳細は [rules/gourmet-canva.md](rules/gourmet-canva.md) を参照してください。
+
+## Gmail入力
+
+推奨件名:
 
 ```text
-[グルメCanva] 焼肉しょうちゃん天満
+[グルメCanva] 店舗名
 ```
 
 本文例:
@@ -80,248 +95,36 @@ CANVA_MODE=autofill
 ・和風ナムル
 ・和牛炙りユッケ
 ・厚切りタンブリアン
-・チシャ
-・厳選赤身2種
-・厳選ホルモン2種
-・豪快特上ハラミ
-・こだわり和風冷麺
 
 メモ：
-・タンとハラミを強めに推したい
-・強い表現は被らせない
+・タンとハラミを推したい
 ```
 
-写真を1〜20枚添付します。iPhoneのHEIC/HEIFもJPEGへ自動変換します。
+写真を添付します。
 
-## 投稿ルール
+## MD保存ルール
 
-`config/gourmet_rules.yaml` に固定しています。
-
-- 写真主役
-- 短文
-- 話し言葉
-- 絵文字あり
-- 未確認情報を捏造しない
-- コース順を最優先
-- 「優勝すぎる」「ビジュやばすぎる」「反則級」などの強い表現を重複させない
-- 自動検証に失敗したら1回コピーを再生成
-- 料理名に確信がない場合は要確認扱い
-
-## セットアップ
-
-### Python
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-cp .env.example .env
-```
-
-## 1. Gmail OAuth
-
-Google CloudでGmail APIを有効化し、OAuth Desktop Client JSONを:
+完成した投稿は原則:
 
 ```text
-secrets/google_client_secret.json
+posts/YYYY/MM/YYYY-MM-DD_店舗名/post.md
 ```
 
-へ保存します。
+に保存します。
 
-初回のみ:
-
-```bash
-python scripts/gmail_oauth_bootstrap.py
-```
-
-## 2. Canva REST OAuth
-
-REST APIは、Gmailから取得したローカル写真をCanvaのAssetとしてアップロードするために使います。
-
-必要スコープ:
+制作結果、Canva URL、確認事項などは:
 
 ```text
-asset:read
-asset:write
-design:content:read
-design:content:write
-design:meta:read
+posts/YYYY/MM/YYYY-MM-DD_店舗名/record.md
 ```
 
-初回のみ:
+に保存します。
 
-```bash
-python scripts/canva_oauth_bootstrap.py
-```
+## 役割分担
 
-## 3. Canva MCP OAuth
+- **Gmail** — 投入口
+- **ChatGPT Automation** — 実行本体
+- **Web検索** — 店舗調査 / 事実確認
+- **Canva** — 完成デザイン
+- **GitHub** — ルール / MD / 制作履歴の保管
 
-正確なテンプレート編集には Canva MCP を使います。
-
-```env
-CANVA_MCP_SERVER_URL=https://mcp.canva.com/mcp
-CANVA_MCP_CLIENT_ID=...
-CANVA_MCP_CLIENT_SECRET=...
-CANVA_MCP_REDIRECT_URI=http://127.0.0.1:8766/callback
-```
-
-初回のみ:
-
-```bash
-python scripts/canva_mcp_oauth_bootstrap.py
-```
-
-MCPのOAuthトークンは:
-
-```text
-secrets/canva_mcp_token.json
-```
-
-へ保存され、その後はrefresh tokenで自動更新します。
-
-> Canva MCPを自作の外部AIアプリから利用するには、Canva側でそのOAuthクライアントのMCP利用が有効になっている必要があります。
-
-## MASTER TEMPLATE
-
-現在の既定値:
-
-```env
-CANVA_SOURCE_ID=DAHQmZ-GP3I
-```
-
-これは「蟹かに城」ベースの20ページテンプレートです。
-
-テンプレート構造の識別ルールは:
-
-```text
-config/canva_template_profile.yaml
-```
-
-に保存しています。
-
-ページ1:
-- 📍 から始まるテキスト → 店名
-- \ を含むテキスト → フック
-- 日本橋 → 最寄駅
-- 大阪 → エリア
-- 残りの大きいテキスト → 表紙サブコピー
-
-ページ2〜20:
-- 各ページの唯一の非空キャプション → 本文
-
-画像:
-- 各ページのroot background fill → 投稿写真
-
-このため、テンプレートの見た目を崩さず差し替えます。
-
-## 実行
-
-1回だけ:
-
-```bash
-python -m grume.worker once
-```
-
-60秒ごとにGmail監視:
-
-```bash
-python -m grume.worker loop --interval 60
-```
-
-Docker:
-
-```bash
-docker compose up -d --build
-```
-
-## Gmailラベル
-
-自動作成:
-
-- `grume/processing`
-- `grume/done`
-- `grume/error`
-
-デフォルト検索:
-
-```text
-is:unread has:attachment subject:"[グルメCanva]"
-```
-
-## 出力
-
-```text
-output/
-  20260928_191800_store/
-    job.json
-    image_plan.json
-    research.md
-    research.json
-    post.md
-    post.json
-    canva_result.json
-```
-
-## Canvaモード
-
-### exact edit — 推奨
-
-```env
-CANVA_MODE=mcp
-```
-
-既存テンプレートをそのままコピーし、背景画像とテキストを直接差し替えます。
-
-### Autofill — 代替
-
-```env
-CANVA_MODE=autofill
-```
-
-Canva側で画像・テキストをData autofillフィールドとして作り直したテンプレート用です。
-
-### Canvaなし
-
-```env
-CANVA_MODE=off
-```
-
-調査・MD生成まで行います。
-
-## 実装済み
-
-- Gmail監視
-- Gmail画像添付取得
-- HEIC / HEIF対応
-- AI画像分類
-- コース順整理
-- Web検索店舗調査
-- 構造化コピー
-- 強表現重複検査
-- 自動再生成
-- Markdown / JSON保存
-- Canva REST asset upload
-- Canva REST Autofill fallback
-- Canva remote MCP接続
-- MASTERコピー
-- 背景画像直接置換
-- テキスト直接置換
-- Canva自動commit
-- Canva完成URL取得
-- Gmail完成通知
-- Docker常駐運用
-- pytest CI
-
-## セキュリティ
-
-以下はGitへコミットしないでください。
-
-```text
-.env
-secrets/google_client_secret.json
-secrets/google_token.json
-secrets/canva_token.json
-secrets/canva_mcp_token.json
-```
-
-本番では `secrets/` と `output/` を永続ボリュームにしてください。
