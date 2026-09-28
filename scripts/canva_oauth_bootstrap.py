@@ -21,13 +21,22 @@ CLIENT_ID = os.environ.get("CANVA_CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CANVA_CLIENT_SECRET")
 REDIRECT_URI = os.environ.get("CANVA_REDIRECT_URI", "http://127.0.0.1:8765/callback")
 TOKEN_FILE = Path(os.environ.get("CANVA_TOKEN_FILE", "secrets/canva_token.json"))
+SOURCE_TYPE = os.environ.get("CANVA_SOURCE_TYPE", "design")
 
+# Required by this worker:
+# - upload asset: asset:write
+# - poll uploaded asset job: asset:read
+# - create/autofill a design: design:content:write
+# - read generated design metadata/URLs: design:meta:read
+# - read source design dataset: design:content:read
 SCOPES = [
+    "asset:read",
     "asset:write",
+    "design:content:read",
     "design:content:write",
     "design:meta:read",
 ]
-if os.environ.get("CANVA_SOURCE_TYPE", "design") == "brand_template":
+if SOURCE_TYPE == "brand_template":
     SCOPES.append("brandtemplate:content:read")
 
 if not CLIENT_ID or not CLIENT_SECRET:
@@ -48,6 +57,7 @@ class Handler(BaseHTTPRequestHandler):
         params = parse_qs(urlparse(self.path).query)
         result["code"] = params.get("code", [""])[0]
         result["state"] = params.get("state", [""])[0]
+        result["error"] = params.get("error", [""])[0]
         body = "Canva authorization received. You can close this tab."
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -79,6 +89,8 @@ webbrowser.open(url)
 thread.join(timeout=300)
 server.server_close()
 
+if result.get("error"):
+    raise SystemExit(f"Canva authorization failed: {result['error']}")
 if not result.get("code"):
     raise SystemExit("Authorization code was not received.")
 if result.get("state") != state:

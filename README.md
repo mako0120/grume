@@ -80,13 +80,7 @@ cp .env.example .env
 
 ### Gmail OAuth
 
-Google CloudでGmail APIを有効化し、OAuth Desktop Client JSONを:
-
-```text
-secrets/google_client_secret.json
-```
-
-へ保存。
+Google CloudでGmail APIを有効化し、OAuth Desktop Client JSONを `secrets/google_client_secret.json` に保存します。
 
 初回だけ:
 
@@ -94,19 +88,21 @@ secrets/google_client_secret.json
 python scripts/gmail_oauth_bootstrap.py
 ```
 
-生成される `secrets/google_token.json` はGitに入れません。
+生成される `secrets/google_token.json` はGitに入りません。
 
 ### Canva OAuth
 
-Canva Developer PortalでOutside CanvaのOAuth設定を作成し、少なくとも以下のスコープを許可:
+Canva Developer PortalでOutside CanvaのOAuth設定を作成し、**このMVPでは以下のスコープが必要**です。
 
 ```text
+asset:read
 asset:write
+design:content:read
 design:content:write
 design:meta:read
 ```
 
-Brand Templateを使う場合は追加:
+Brand Templateを元にする場合は追加:
 
 ```text
 brandtemplate:content:read
@@ -213,7 +209,7 @@ output/
 - 構造化コピー生成
 - 強表現重複チェック + 1回自動修正
 - MD/JSON保存
-- Canva Asset Upload
+- Canva Asset Upload + upload job polling
 - Canva Dataset検証
 - Canva Autofill
 - Canva OAuth refresh tokenローテーション保存
@@ -224,3 +220,5 @@ output/
 ## 重要
 
 このMVPは **常駐サーバー/VPS/Docker** で動かす前提です。GitHub Actionsの定期実行だけでCanvaのrefresh tokenを安全に永続更新する設計にはしていません。
+
+また、コードだけではCanvaの既存デザインにData autofillフィールドは自動付与されません。最初に1回だけMASTER TEMPLATEのフィールド設定が必要です。
